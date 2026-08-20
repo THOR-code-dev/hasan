@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="tr" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dijital Hafızlık Çizelgesi - Takip ve Yönetim Sistemi</title>
+  <meta name="description" content="Hafızlık cüz ve dönüş takibini kolaylaştıran, dijital, kullanımı basit ve şık çizelge uygulaması.">
+  
+  <!-- Google Fonts: Outift & Plus Jakarta Sans for ultra clean typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- Background Decorative Ambient Glows -->
+  <div class="ambient-glow glow-1"></div>
+  <div class="ambient-glow glow-2"></div>
+
+  <div class="app-container">
+    
+    <!-- Top Header Bar -->
+    <header class="app-header">
+      <div class="header-brand">
+        <div class="brand-icon">
+          <i class="fa-solid fa-book-quran"></i>
+        </div>
+        <div class="brand-text">
+          <h1>Hafızlık Çizelgesi</h1>
+          <p>Dönüş ve Cüz Takip Sistemi</p>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <!-- Quick Load Photo Sample Data Button -->
+        <button id="btnLoadPhotoData" class="btn btn-outline btn-amber" title="Kağıttaki kayıtlı örnek verileri yükler">
+          <i class="fa-solid fa-camera-retro"></i>
+          <span>Fotoğraftaki Verileri Yükle</span>
+        </button>
+
+        <!-- New Dönüş / Round Button -->
+        <button id="btnAddRound" class="btn btn-primary">
+          <i class="fa-solid fa-plus"></i>
+          <span>Yeni Dönüş Ekle</span>
+        </button>
+
+        <!-- Theme Toggle -->
+        <button id="btnThemeToggle" class="icon-btn" title="Karanlık / Aydınlık Mod">
+          <i class="fa-solid fa-moon"></i>
+        </button>
+      </div>
+    </header>
+
+    <!-- Stats & Progress Dashboard Cards -->
+    <section class="dashboard-grid">
+      
+      <!-- Total Progress Card -->
+      <div class="dash-card">
+        <div class="dash-icon bg-emerald">
+          <i class="fa-solid fa-chart-line"></i>
+        </div>
+        <div class="dash-info">
+          <span class="dash-label">Aktif Dönüş İlerlemesi</span>
+          <div class="dash-val-group">
+            <h2 id="statActiveProgress">0 / 30</h2>
+            <span class="badge badge-emerald" id="statPercentBadge">%0</span>
+          </div>
+          <div class="progress-bar-track">
+            <div class="progress-bar-fill" id="statProgressBar" style="width: 0%;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Total Rounds Completed Card -->
+      <div class="dash-card">
+        <div class="dash-icon bg-blue">
+          <i class="fa-solid fa-rotate"></i>
+        </div>
+        <div class="dash-info">
+          <span class="dash-label">Toplam Dönüş Sayısı</span>
+          <h2 id="statTotalRounds">0</h2>
+          <span class="subtext" id="statActiveRoundName">Seçili: -</span>
+        </div>
+      </div>
+
+      <!-- Recent Activity Card -->
+      <div class="dash-card">
+        <div class="dash-icon bg-amber">
+          <i class="fa-solid fa-user-tie"></i>
+        </div>
+        <div class="dash-info">
+          <span class="dash-label">Son Dinleyen Hoca</span>
+          <h2 id="statLastTeacher">-</h2>
+          <span class="subtext" id="statLastDate">Son Tarih: -</span>
+        </div>
+      </div>
+
+      <!-- Quick Actions Card -->
+      <div class="dash-card action-card">
+        <span class="dash-label">Veri & Araçlar</span>
+        <div class="dash-btn-group">
+          <button id="btnExportJSON" class="btn-sm btn-ghost" title="Yedekle (JSON)">
+            <i class="fa-solid fa-download"></i> İndir
+          </button>
+          <button id="btnImportJSON" class="btn-sm btn-ghost" title="Yedek Yükle (JSON)">
+            <i class="fa-solid fa-upload"></i> Yükle
+          </button>
+          <button id="btnExportCSV" class="btn-sm btn-ghost" title="Excel (CSV)">
+            <i class="fa-solid fa-file-excel"></i> CSV
+          </button>
+          <button id="btnPrint" class="btn-sm btn-ghost" title="Yazdır / PDF">
+            <i class="fa-solid fa-print"></i> Yazdır
+          </button>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- Main Navigation Tabs & Controls -->
+    <div class="controls-bar">
+      
+      <!-- Round Selectors / Tabs -->
+      <div class="round-tabs" id="roundTabsContainer">
+        <!-- Dynamic Tabs inserted by JS -->
+      </div>
+
+      <!-- Filter / Search & View Switcher -->
+      <div class="view-controls">
+        <div class="search-box">
+          <i class="fa-solid fa-magnifying-glass"></i>
+          <input type="text" id="searchInput" placeholder="Hoca veya tarih ara...">
+        </div>
+
+        <div class="view-toggle">
+          <button class="toggle-btn active" data-view="cards" title="Kart Görünümü">
+            <i class="fa-solid fa-table-cells-large"></i>
+          </button>
+          <button class="toggle-btn" data-view="table" title="Tablo Görünümü">
+            <i class="fa-solid fa-table-list"></i>
+          </button>
+          <button class="toggle-btn" data-view="split" title="Tüm Dönüşleri Yan Yana Gör">
+            <i class="fa-solid fa-columns"></i>
+          </button>
+        </div>
+
+        <!-- Teacher Management Modal Opener -->
+        <button id="btnManageTeachers" class="btn btn-outline" title="Hoca Listesini Düzenle">
+          <i class="fa-solid fa-users"></i>
+          <span>Hocalar</span>
+        </button>
+      </div>
+
+    </div>
+
+    <!-- Quick Fill Helper Panel -->
+    <div class="quick-fill-panel">
+      <div class="quick-fill-title">
+        <i class="fa-solid fa-bolt"></i>
+        <span>Hızlı Doldurma Araçları:</span>
+      </div>
+      <div class="quick-fill-controls">
+        <div class="form-group-inline">
+          <label>Seçili Hoca:</label>
+          <select id="quickTeacherSelect">
+            <!-- Populated by JS -->
+          </select>
+        </div>
+        <button id="btnQuickToday" class="btn-sm btn-secondary">
+          <i class="fa-solid fa-calendar-day"></i> Boş Olan İlk Cüze Bugünün Tarihini & Hocasını Yaz
+        </button>
+        <button id="btnClearCurrentRound" class="btn-sm btn-danger-ghost">
+          <i class="fa-solid fa-trash-can"></i> Bu Dönüşü Temizle
+        </button>
+      </div>
+    </div>
+
+    <!-- Content Views Container -->
+    <main id="mainContentView">
+      <!-- Dynamic Views: Cards, Table, Split View populated by app.js -->
+    </main>
+
+  </div>
+
+  <!-- Hidden File Input for Import -->
+  <input type="file" id="fileInputJSON" accept=".json" style="display: none;">
+
+  <!-- Modal: Teacher Manager -->
+  <div class="modal-overlay" id="teacherModal">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3><i class="fa-solid fa-users-gear"></i> Hoca Listesi Yönetimi</h3>
+        <button class="close-modal" id="btnCloseTeacherModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-desc">Çizelgede hızlıca seçebileceğiniz hoca / dinleyen isimlerini buradan düzenleyin.</p>
+        
+        <div class="add-teacher-row">
+          <input type="text" id="newTeacherInput" placeholder="Örn: İsmail Hoca, Bilal Abi...">
+          <button id="btnAddTeacher" class="btn btn-primary">Ekle</button>
+        </div>
+
+        <ul class="teacher-list" id="teacherListContainer">
+          <!-- Dynamic Teacher List items -->
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- External JS Scripts -->
+  <script src="js/storage.js"></script>
+  <script src="js/sample-data.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
