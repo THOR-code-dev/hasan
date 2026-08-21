@@ -1,9 +1,11 @@
-/**
+﻿/**
  * Main Application Logic for Dijital Hafızlık Çizelgesi
+ * Realtime Supabase Backend Integration
  */
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   const storage = window.storageManager;
+  const supabaseService = window.supabaseService;
   let currentView = 'cards'; // 'cards' | 'table' | 'split'
   let searchQuery = '';
 
@@ -12,6 +14,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const roundTabsContainer = document.getElementById('roundTabsContainer');
   const quickTeacherSelect = document.getElementById('quickTeacherSelect');
   const searchInput = document.getElementById('searchInput');
+
+  // Cloud Status Elements
+  const cloudStatusBadge = document.getElementById('cloudStatusBadge');
+  const cloudStatusText = document.getElementById('cloudStatusText');
 
   // Stats Elements
   const statActiveProgress = document.getElementById('statActiveProgress');
@@ -27,10 +33,31 @@ document.addEventListener('DOMContentLoaded', () => {
   const teacherListContainer = document.getElementById('teacherListContainer');
   const newTeacherInput = document.getElementById('newTeacherInput');
 
+  // Cloud Status Handler
+  if (supabaseService) {
+    supabaseService.onStatusChange((isOnline, message) => {
+      if (cloudStatusBadge && cloudStatusText) {
+        cloudStatusBadge.className = `cloud-status-badge ${isOnline ? 'connected' : 'error'}`;
+        cloudStatusText.textContent = isOnline ? 'Bulut: Bağlı' : 'Bulut: Çevrimdışı';
+        cloudStatusBadge.title = message || (isOnline ? 'Supabase Bağlantısı Aktif' : 'Supabase Çevrimdışı');
+      }
+    });
+  }
+
+  // Realtime Remote Data Change Listener
+  storage.onDataChange((table) => {
+    renderAll();
+    showToast(`Buluttan canlı veri güncellendi (${table})`, 'info');
+  });
+
   // Init App
-  function init() {
+  async function init() {
     setupEventListeners();
     applyTheme(localStorage.getItem('hafizlik_cizelgesi_theme') || 'dark');
+    renderAll();
+
+    // Initialize Supabase Data Fetch
+    await storage.init();
     renderAll();
   }
 
@@ -44,10 +71,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // --- STATS RENDER ---
   function renderStats() {
+    if (!storage.data || !storage.data.rounds || storage.data.rounds.length === 0) return;
+
     const activeRound = storage.data.rounds.find(r => r.id === storage.data.activeRoundId) || storage.data.rounds[0];
     if (!activeRound) return;
 
-    const completedCount = activeRound.juzs.filter(j => j.status === 'completed' || j.date || j.teacher).length;
+    const completedCount = (activeRound.juzs || []).filter(j => j.status === 'completed' || j.date || j.teacher).length;
     const percent = Math.round((completedCount / 30) * 100);
 
     statActiveProgress.textContent = `${completedCount} / 30`;
@@ -58,7 +87,7 @@ document.addEventListener('DOMContentLoaded', () => {
     statActiveRoundName.textContent = `Seçili: ${activeRound.name}`;
 
     // Find last recorded Juz
-    const filledJuzs = activeRound.juzs.filter(j => j.date || j.teacher);
+    const filledJuzs = (activeRound.juzs || []).filter(j => j.date || j.teacher);
     if (filledJuzs.length > 0) {
       const lastJuz = filledJuzs[filledJuzs.length - 1];
       statLastTeacher.textContent = lastJuz.teacher || 'Belirtilmedi';
@@ -72,6 +101,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // --- TABS RENDER ---
   function renderTabs() {
     roundTabsContainer.innerHTML = '';
+    if (!storage.data || !storage.data.rounds) return;
+
     storage.data.rounds.forEach((round) => {
       const btn = document.createElement('button');
       btn.className = `tab-btn ${round.id === storage.data.activeRoundId ? 'active' : ''}`;
@@ -85,10 +116,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const deleteBtn = document.createElement('i');
         deleteBtn.className = 'fa-solid fa-xmark tab-delete-btn';
         deleteBtn.title = 'Dönüşü Sil';
-        deleteBtn.addEventListener('click', (e) => {
+        deleteBtn.addEventListener('click', async (e) => {
           e.stopPropagation();
           if (confirm(`${round.name} silinecektir. Emin misiniz?`)) {
-            storage.deleteRound(round.id);
+            await storage.deleteRound(round.id);
             showToast(`${round.name} silindi.`);
             renderAll();
           }
@@ -98,7 +129,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       btn.addEventListener('click', () => {
         storage.data.activeRoundId = round.id;
-        storage.saveData(storage.data);
+        storage.saveLocalData(storage.data);
         renderAll();
       });
 
@@ -109,7 +140,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // --- QUICK TEACHER SELECT RENDER ---
   function renderQuickTeacherSelect() {
     quickTeacherSelect.innerHTML = '';
-    storage.teachers.forEach(t => {
+    (storage.teachers || []).forEach(t => {
       const opt = document.createElement('option');
       opt.value = t;
       opt.textContent = t;
@@ -120,7 +151,13 @@ document.addEventListener('DOMContentLoaded', () => {
   // --- MAIN VIEW RENDER (CARDS / TABLE / SPLIT) ---
   function renderView() {
     mainContentView.innerHTML = '';
+    if (!storage.data || !storage.data.rounds || storage.data.rounds.length === 0) {
+      mainContentView.innerHTML = `<div style="text-align: center; padding: 3rem; color: var(--text-muted);">Kayıtlı dönüş bulunamadı.</div>`;
+      return;
+    }
+
     const activeRound = storage.data.rounds.find(r => r.id === storage.data.activeRoundId) || storage.data.rounds[0];
+    if (!activeRound) return;
 
     if (currentView === 'cards') {
       renderCardsView(activeRound);
@@ -136,10 +173,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const grid = document.createElement('div');
     grid.className = 'cards-grid';
 
-    const filteredJuzs = round.juzs.filter(juz => {
+    const juzList = round.juzs || [];
+    const filteredJuzs = juzList.filter(juz => {
       if (!searchQuery) return true;
       const query = searchQuery.toLowerCase();
-      return juz.name.toLowerCase().includes(query) ||
+      return (juz.name && juz.name.toLowerCase().includes(query)) ||
              (juz.teacher && juz.teacher.toLowerCase().includes(query)) ||
              (juz.date && juz.date.includes(query));
     });
@@ -188,28 +226,28 @@ document.addEventListener('DOMContentLoaded', () => {
       const teacherSelect = card.querySelector('.teacher-select');
       const btnToday = card.querySelector('.btn-today-inline');
 
-      dateInput.addEventListener('change', (e) => {
-        storage.updateJuz(round.id, juz.id, { date: e.target.value });
+      dateInput.addEventListener('change', async (e) => {
+        await storage.updateJuz(round.id, juz.id, { date: e.target.value });
         renderStats();
         card.classList.toggle('completed', !!(e.target.value || teacherSelect.value));
       });
 
-      teacherSelect.addEventListener('change', (e) => {
-        storage.updateJuz(round.id, juz.id, { teacher: e.target.value });
+      teacherSelect.addEventListener('change', async (e) => {
+        await storage.updateJuz(round.id, juz.id, { teacher: e.target.value });
         renderStats();
         card.classList.toggle('completed', !!(dateInput.value || e.target.value));
       });
 
-      btnToday.addEventListener('click', () => {
+      btnToday.addEventListener('click', async () => {
         const todayStr = new Date().toISOString().split('T')[0];
         dateInput.value = todayStr;
         if (!teacherSelect.value && quickTeacherSelect.value) {
           teacherSelect.value = quickTeacherSelect.value;
         }
-        storage.updateJuz(round.id, juz.id, { date: todayStr, teacher: teacherSelect.value });
+        await storage.updateJuz(round.id, juz.id, { date: todayStr, teacher: teacherSelect.value });
         renderStats();
         card.classList.add('completed');
-        showToast(`${juz.name} bugünün tarihiyle kaydedildi.`);
+        showToast(`${juz.name} kaydedildi.`);
       });
 
       grid.appendChild(card);
@@ -237,7 +275,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <tbody>
     `;
 
-    round.juzs.forEach(juz => {
+    (round.juzs || []).forEach(juz => {
       const isDone = juz.status === 'completed' || juz.date || juz.teacher;
       html += `
         <tr data-id="${juz.id}">
@@ -271,23 +309,23 @@ document.addEventListener('DOMContentLoaded', () => {
       const teacherSel = tr.querySelector('.tbl-teacher');
       const todayBtn = tr.querySelector('.tbl-today-btn');
 
-      dateInp.addEventListener('change', (e) => {
-        storage.updateJuz(round.id, juzId, { date: e.target.value });
+      dateInp.addEventListener('change', async (e) => {
+        await storage.updateJuz(round.id, juzId, { date: e.target.value });
         renderStats();
       });
 
-      teacherSel.addEventListener('change', (e) => {
-        storage.updateJuz(round.id, juzId, { teacher: e.target.value });
+      teacherSel.addEventListener('change', async (e) => {
+        await storage.updateJuz(round.id, juzId, { teacher: e.target.value });
         renderStats();
       });
 
-      todayBtn.addEventListener('click', () => {
+      todayBtn.addEventListener('click', async () => {
         const todayStr = new Date().toISOString().split('T')[0];
         dateInp.value = todayStr;
         if (!teacherSel.value && quickTeacherSelect.value) {
           teacherSel.value = quickTeacherSelect.value;
         }
-        storage.updateJuz(round.id, juzId, { date: todayStr, teacher: teacherSel.value });
+        await storage.updateJuz(round.id, juzId, { date: todayStr, teacher: teacherSel.value });
         renderAll();
         showToast(`Cüz ${juzId} güncellendi.`);
       });
@@ -301,14 +339,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const container = document.createElement('div');
     container.className = 'split-view-container';
 
-    storage.data.rounds.forEach(round => {
+    (storage.data.rounds || []).forEach(round => {
       const col = document.createElement('div');
       col.className = 'split-column';
       
       let html = `
         <div class="split-header">
           <h3>${round.name}</h3>
-          <span class="badge badge-emerald">${round.juzs.filter(j => j.date || j.teacher).length} / 30</span>
+          <span class="badge badge-emerald">${(round.juzs || []).filter(j => j.date || j.teacher).length} / 30</span>
         </div>
         <div class="table-responsive">
           <table class="cuz-table">
@@ -322,7 +360,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <tbody>
       `;
 
-      round.juzs.forEach(juz => {
+      (round.juzs || []).forEach(juz => {
         html += `
           <tr>
             <td class="cuz-col">${juz.id}. Cüz</td>
@@ -343,8 +381,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // --- EVENT LISTENERS ---
   function setupEventListeners() {
     // Add Round Button
-    document.getElementById('btnAddRound').addEventListener('click', () => {
-      const newRound = storage.addNewRound();
+    document.getElementById('btnAddRound').addEventListener('click', async () => {
+      const newRound = await storage.addNewRound();
       showToast(`${newRound.name} başarıyla oluşturuldu!`);
       renderAll();
     });
@@ -373,21 +411,27 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Load Photo Sample Data Button
-    document.getElementById('btnLoadPhotoData').addEventListener('click', () => {
-      if (confirm('Fotoğraflardaki hazır veriler (1., 2. ve 3. Dönüş) çizelgenize yüklenecektir. Onaylıyor musunuz?')) {
-        storage.saveData(JSON.parse(JSON.stringify(PHOTO_SAMPLE_DATA)));
-        ["Metin Hocam", "Enes Hocam", "Yusuf Hocam", "Yusuf Alagöz H.", "Muhammed Hoca", "Malik Abim", "Yusuf Hoca"].forEach(t => storage.addTeacher(t));
-        showToast('Fotoğraflardaki 3 dönüşün tüm verileri yüklendi!');
+    document.getElementById('btnLoadPhotoData').addEventListener('click', async () => {
+      if (confirm('Fotoğraflardaki hazır veriler (1., 2. ve 3. Dönüş) Supabase bulut veritabanınıza yüklenecektir. Onaylıyor musunuz?')) {
+        showToast('Veriler Supabase bulutuna aktarılıyor...', 'info');
+        
+        // Add sample teachers
+        for (const t of ["Metin Hocam", "Enes Hocam", "Yusuf Hocam", "Yusuf Alagöz H.", "Muhammed Hoca", "Malik Abim", "Yusuf Hoca"]) {
+          await storage.addTeacher(t);
+        }
+
+        await storage.loadPhotoSampleData(PHOTO_SAMPLE_DATA);
+        showToast('Fotoğraflardaki 3 dönüşün tüm verileri Supabase buluta başarıyla yüklendi!');
         renderAll();
       }
     });
 
     // Quick Fill Today Button
-    document.getElementById('btnQuickToday').addEventListener('click', () => {
+    document.getElementById('btnQuickToday').addEventListener('click', async () => {
       const activeRound = storage.data.rounds.find(r => r.id === storage.data.activeRoundId);
       if (!activeRound) return;
 
-      const emptyJuz = activeRound.juzs.find(j => !j.date && !j.teacher);
+      const emptyJuz = (activeRound.juzs || []).find(j => !j.date && !j.teacher);
       if (!emptyJuz) {
         showToast('Bu dönüşteki tüm cüzler doldurulmuş!', 'warning');
         return;
@@ -395,18 +439,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const todayStr = new Date().toISOString().split('T')[0];
       const selectedTeacher = quickTeacherSelect.value;
-      storage.updateJuz(activeRound.id, emptyJuz.id, { date: todayStr, teacher: selectedTeacher });
+      await storage.updateJuz(activeRound.id, emptyJuz.id, { date: todayStr, teacher: selectedTeacher });
       showToast(`${emptyJuz.name} için ${todayStr} ve ${selectedTeacher || 'Hoca'} atandı.`);
       renderAll();
     });
 
     // Clear Current Round Button
-    document.getElementById('btnClearCurrentRound').addEventListener('click', () => {
+    document.getElementById('btnClearCurrentRound').addEventListener('click', async () => {
       const activeRound = storage.data.rounds.find(r => r.id === storage.data.activeRoundId);
       if (!activeRound) return;
 
       if (confirm(`${activeRound.name} içerisindeki tüm kayıtlar temizlenecektir. Emin misiniz?`)) {
-        storage.clearRound(activeRound.id);
+        await storage.clearRound(activeRound.id);
         showToast(`${activeRound.name} temizlendi.`);
         renderAll();
       }
@@ -423,11 +467,11 @@ document.addEventListener('DOMContentLoaded', () => {
       const file = e.target.files[0];
       if (!file) return;
       const reader = new FileReader();
-      reader.onload = (event) => {
+      reader.onload = async (event) => {
         try {
           const imported = JSON.parse(event.target.result);
           if (imported && imported.rounds) {
-            storage.saveData(imported);
+            await storage.loadPhotoSampleData(imported);
             showToast('Yedek başarıyla yüklendi!');
             renderAll();
           } else {
@@ -456,9 +500,9 @@ document.addEventListener('DOMContentLoaded', () => {
       teacherModal.classList.remove('active');
     });
 
-    document.getElementById('btnAddTeacher').addEventListener('click', () => {
+    document.getElementById('btnAddTeacher').addEventListener('click', async () => {
       const val = newTeacherInput.value;
-      if (storage.addTeacher(val)) {
+      if (val && await storage.addTeacher(val)) {
         newTeacherInput.value = '';
         renderTeacherModalList();
         renderQuickTeacherSelect();
@@ -471,15 +515,15 @@ document.addEventListener('DOMContentLoaded', () => {
   // Render Teacher List inside Modal
   function renderTeacherModalList() {
     teacherListContainer.innerHTML = '';
-    storage.teachers.forEach(t => {
+    (storage.teachers || []).forEach(t => {
       const li = document.createElement('li');
       li.className = 'teacher-item';
       li.innerHTML = `
         <span><i class="fa-solid fa-user-graduate"></i> ${t}</span>
         <button data-name="${t}"><i class="fa-solid fa-trash"></i></button>
       `;
-      li.querySelector('button').addEventListener('click', () => {
-        storage.removeTeacher(t);
+      li.querySelector('button').addEventListener('click', async () => {
+        await storage.removeTeacher(t);
         renderTeacherModalList();
         renderQuickTeacherSelect();
         renderView();
@@ -511,11 +555,25 @@ document.addEventListener('DOMContentLoaded', () => {
     return dateStr;
   }
 
-  function showToast(message) {
+  function showToast(message, type = 'success') {
     const toastContainer = document.getElementById('toastContainer');
     const toast = document.createElement('div');
     toast.className = 'toast';
-    toast.innerHTML = `<i class="fa-solid fa-circle-check" style="color: var(--accent-emerald)"></i> <span>${message}</span>`;
+    
+    let icon = 'fa-circle-check';
+    let iconColor = 'var(--accent-emerald)';
+    if (type === 'warning') {
+      icon = 'fa-triangle-exclamation';
+      iconColor = 'var(--accent-amber)';
+    } else if (type === 'error') {
+      icon = 'fa-circle-exclamation';
+      iconColor = 'var(--accent-rose)';
+    } else if (type === 'info') {
+      icon = 'fa-circle-info';
+      iconColor = 'var(--accent-blue)';
+    }
+
+    toast.innerHTML = `<i class="fa-solid ${icon}" style="color: ${iconColor}"></i> <span>${message}</span>`;
     toastContainer.appendChild(toast);
     setTimeout(() => {
       toast.style.opacity = '0';
@@ -525,5 +583,5 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Run initialization
-  init();
+  await init();
 });

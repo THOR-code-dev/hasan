@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="tr" data-theme="dark">
 <head>
   <meta charset="UTF-8">
@@ -6,7 +6,7 @@
   <title>Dijital Hafızlık Çizelgesi - Takip ve Yönetim Sistemi</title>
   <meta name="description" content="Hafızlık cüz ve dönüş takibini kolaylaştıran, dijital, kullanımı basit ve şık çizelge uygulaması.">
   
-  <!-- Google Fonts: Outift & Plus Jakarta Sans for ultra clean typography -->
+  <!-- Google Fonts: Plus Jakarta Sans & Amiri -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -37,8 +37,14 @@
       </div>
 
       <div class="header-actions">
+        <!-- Cloud Connection Status Badge -->
+        <div class="cloud-status-badge" id="cloudStatusBadge" title="Supabase Bulut Durumu">
+          <span class="status-dot"></span>
+          <span class="status-text" id="cloudStatusText">Buluta Bağlanıyor...</span>
+        </div>
+
         <!-- Quick Load Photo Sample Data Button -->
-        <button id="btnLoadPhotoData" class="btn btn-outline btn-amber" title="Kağıttaki kayıtlı örnek verileri yükler">
+        <button id="btnLoadPhotoData" class="btn btn-outline btn-amber" title="Kağıttaki kayıtlı örnek verileri buluta yükler">
           <i class="fa-solid fa-camera-retro"></i>
           <span>Fotoğraftaki Verileri Yükle</span>
         </button>
@@ -214,9 +220,14 @@
   <!-- Toast Notification Container -->
   <div class="toast-container" id="toastContainer"></div>
 
+  <!-- Supabase JS Client CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
   <!-- External JS Scripts -->
-  <script src="js/storage.js"></script>
+  <script src="js/supabase-config.js"></script>
+  <script src="js/supabase-service.js"></script>
   <script src="js/sample-data.js"></script>
+  <script src="js/storage.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

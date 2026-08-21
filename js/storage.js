@@ -1,6 +1,6 @@
-/**
+﻿/**
  * Storage Manager for Dijital Hafızlık Çizelgesi
- * Handles LocalStorage saving, loading, JSON backup, CSV export, and teacher management.
+ * Hybrid Layer: Connects Supabase Cloud Database with LocalStorage Fallback & Realtime Sync.
  */
 
 const STORAGE_KEYS = {
@@ -38,6 +38,7 @@ function createEmptyRound(roundNumber) {
   return {
     id: `round_${Date.now()}_${roundNumber}`,
     name: `${roundNumber}. Dönüş`,
+    round_number: roundNumber,
     createdDate: new Date().toISOString().split('T')[0],
     juzs: juzs
   };
@@ -45,41 +46,114 @@ function createEmptyRound(roundNumber) {
 
 class StorageManager {
   constructor() {
-    this.teachers = this.loadTeachers();
-    this.data = this.loadData();
+    this.supabase = window.supabaseService;
+    this.teachers = this.loadLocalTeachers();
+    this.data = this.loadLocalData();
+    this.isCloudSync = false;
+    this.onDataChangeCallbacks = [];
   }
 
-  // Load teachers from localStorage or default
-  loadTeachers() {
+  // Register listener for remote realtime changes
+  onDataChange(callback) {
+    this.onDataChangeCallbacks.push(callback);
+  }
+
+  notifyDataChange(source) {
+    this.onDataChangeCallbacks.forEach(cb => cb(source));
+  }
+
+  // Async Initialization with Supabase
+  async init() {
+    if (!this.supabase) return;
+
+    const isConnected = await this.supabase.checkConnection();
+    if (isConnected) {
+      this.isCloudSync = true;
+      await this.syncFromCloud();
+
+      // Listen for Realtime Events
+      this.supabase.setupRealtime(async (table, payload) => {
+        console.log(`[Realtime] Remote update received from ${table}`);
+        await this.syncFromCloud();
+        this.notifyDataChange(table);
+      });
+    } else {
+      console.log('Supabase offline or unreachable. Using LocalStorage.');
+    }
+  }
+
+  // Fetch all latest data from Supabase & update local cache
+  async syncFromCloud() {
+    if (!this.supabase) return;
+    try {
+      const [remoteTeachers, remoteRounds] = await Promise.all([
+        this.supabase.getTeachers(),
+        this.supabase.getRounds()
+      ]);
+
+      if (remoteTeachers && remoteTeachers.length > 0) {
+        this.teachers = remoteTeachers;
+        this.saveLocalTeachers(this.teachers);
+      }
+
+      if (remoteRounds && remoteRounds.length > 0) {
+        // Keep active round if valid, else pick first
+        let activeId = this.data.activeRoundId;
+        const exists = remoteRounds.find(r => r.id === activeId);
+        if (!exists) {
+          activeId = remoteRounds[0].id;
+        }
+
+        this.data = {
+          activeRoundId: activeId,
+          rounds: remoteRounds
+        };
+        this.saveLocalData(this.data);
+      }
+    } catch (e) {
+      console.error('Cloud senkronizasyon hatası:', e);
+    }
+  }
+
+  // --- TEACHERS ---
+  loadLocalTeachers() {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.TEACHERS);
       if (saved) return JSON.parse(saved);
     } catch (e) {
       console.error("Error loading teachers:", e);
     }
-    this.saveTeachers(DEFAULT_TEACHERS);
     return [...DEFAULT_TEACHERS];
   }
 
-  saveTeachers(teachers) {
+  saveLocalTeachers(teachers) {
     this.teachers = teachers;
     localStorage.setItem(STORAGE_KEYS.TEACHERS, JSON.stringify(teachers));
   }
 
-  addTeacher(name) {
+  async addTeacher(name) {
     if (!name || this.teachers.includes(name.trim())) return false;
-    this.teachers.push(name.trim());
-    this.saveTeachers(this.teachers);
+    const cleanName = name.trim();
+    this.teachers.push(cleanName);
+    this.saveLocalTeachers(this.teachers);
+
+    if (this.isCloudSync) {
+      await this.supabase.addTeacher(cleanName);
+    }
     return true;
   }
 
-  removeTeacher(name) {
+  async removeTeacher(name) {
     this.teachers = this.teachers.filter(t => t !== name);
-    this.saveTeachers(this.teachers);
+    this.saveLocalTeachers(this.teachers);
+
+    if (this.isCloudSync) {
+      await this.supabase.removeTeacher(name);
+    }
   }
 
-  // Load app data (Rounds and Juzs)
-  loadData() {
+  // --- DATA (ROUNDS & JUZS) ---
+  loadLocalData() {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.APP_DATA);
       if (saved) {
@@ -91,44 +165,57 @@ class StorageManager {
     } catch (e) {
       console.error("Error loading app data:", e);
     }
-    // Default initial data with 1 round
     const initialData = {
       activeRoundId: null,
       rounds: [createEmptyRound(1)]
     };
     initialData.activeRoundId = initialData.rounds[0].id;
-    this.saveData(initialData);
+    this.saveLocalData(initialData);
     return initialData;
   }
 
-  saveData(data) {
+  saveLocalData(data) {
     this.data = data;
     localStorage.setItem(STORAGE_KEYS.APP_DATA, JSON.stringify(data));
   }
 
-  // Helper to add a new Dönüş
-  addNewRound() {
+  async addNewRound() {
     const nextNum = this.data.rounds.length + 1;
+
+    if (this.isCloudSync) {
+      const created = await this.supabase.createRound(nextNum, `${nextNum}. Dönüş`);
+      if (created) {
+        this.data.rounds.push(created);
+        this.data.activeRoundId = created.id;
+        this.saveLocalData(this.data);
+        return created;
+      }
+    }
+
+    // Local fallback
     const newRound = createEmptyRound(nextNum);
     this.data.rounds.push(newRound);
     this.data.activeRoundId = newRound.id;
-    this.saveData(this.data);
+    this.saveLocalData(this.data);
     return newRound;
   }
 
-  // Delete a Dönüş
-  deleteRound(roundId) {
-    if (this.data.rounds.length <= 1) return false; // Keep at least 1 round
+  async deleteRound(roundId) {
+    if (this.data.rounds.length <= 1) return false;
+
     this.data.rounds = this.data.rounds.filter(r => r.id !== roundId);
     if (this.data.activeRoundId === roundId) {
       this.data.activeRoundId = this.data.rounds[0].id;
     }
-    this.saveData(this.data);
+    this.saveLocalData(this.data);
+
+    if (this.isCloudSync) {
+      await this.supabase.deleteRound(roundId);
+    }
     return true;
   }
 
-  // Update specific Juz inside active round
-  updateJuz(roundId, juzId, fields) {
+  async updateJuz(roundId, juzId, fields) {
     const round = this.data.rounds.find(r => r.id === roundId);
     if (!round) return;
     const juz = round.juzs.find(j => j.id === juzId);
@@ -136,18 +223,21 @@ class StorageManager {
 
     Object.assign(juz, fields);
     
-    // Auto status evaluation
+    // Status update
     if (juz.date || juz.teacher) {
       juz.status = 'completed';
     } else {
       juz.status = 'empty';
     }
 
-    this.saveData(this.data);
+    this.saveLocalData(this.data);
+
+    if (this.isCloudSync) {
+      await this.supabase.updateJuzRecord(roundId, juzId, juz);
+    }
   }
 
-  // Clear current round
-  clearRound(roundId) {
+  async clearRound(roundId) {
     const round = this.data.rounds.find(r => r.id === roundId);
     if (!round) return;
     round.juzs.forEach(j => {
@@ -156,7 +246,21 @@ class StorageManager {
       j.status = 'empty';
       j.note = '';
     });
-    this.saveData(this.data);
+    this.saveLocalData(this.data);
+
+    if (this.isCloudSync) {
+      await this.supabase.clearRoundJuzs(roundId);
+    }
+  }
+
+  async loadPhotoSampleData(sampleData) {
+    if (this.isCloudSync) {
+      // Supabase'e aktar
+      await this.supabase.importAllData(sampleData);
+      await this.syncFromCloud();
+    } else {
+      this.saveLocalData(JSON.parse(JSON.stringify(sampleData)));
+    }
   }
 
   // Export data to JSON file
