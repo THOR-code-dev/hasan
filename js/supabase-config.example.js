@@ -1,23 +1,19 @@
-﻿/**
- * Supabase Configuration
- */
+﻿# Supabase Configuration Template (Ornek Sablon)
+# Kendi URL ve Anon/Publishable Key bilgilerinizi buraya girin.
 const SUPABASE_CONFIG = {
-  URL: 'https://jfxlwitmvbiwhiycienh.supabase.co',
-  ANON_KEY: 'sb_publishable_a7fwLGEmS6Lq7S-a1_v2Jw_gp4ImdwU'
+  URL: 'YOUR_SUPABASE_PROJECT_URL',
+  ANON_KEY: 'YOUR_SUPABASE_ANON_OR_PUBLISHABLE_KEY'
 };
 
-// Initialize Supabase Client
 let supabaseClient = null;
 
 try {
-  if (window.supabase && SUPABASE_CONFIG.URL && SUPABASE_CONFIG.ANON_KEY) {
+  if (window.supabase && SUPABASE_CONFIG.URL && SUPABASE_CONFIG.ANON_KEY && SUPABASE_CONFIG.URL !== 'YOUR_SUPABASE_PROJECT_URL') {
     supabaseClient = window.supabase.createClient(
       SUPABASE_CONFIG.URL,
       SUPABASE_CONFIG.ANON_KEY
     );
     console.log('Supabase client initialized successfully.');
-  } else {
-    console.warn('Supabase JS library not loaded or credentials missing.');
   }
 } catch (e) {
   console.error('Error initializing Supabase client:', e);
